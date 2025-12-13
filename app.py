@@ -109,27 +109,43 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
         from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
         
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            
-            # Try to get English transcript first
+            # Try simple get_transcript first (works for most cases)
             try:
-                transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
-                transcript_data = transcript.fetch()
+                transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
                 return ' '.join([item['text'] for item in transcript_data])
             except (NoTranscriptFound, TranscriptsDisabled):
-                # If English fails, try auto-generated English
+                # Try with any available language
                 try:
-                    transcript = transcript_list.find_generated_transcript(['en'])
-                    transcript_data = transcript.fetch()
+                    transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
                     return ' '.join([item['text'] for item in transcript_data])
                 except (NoTranscriptFound, TranscriptsDisabled):
-                    # Get the first available transcript (manual or auto-generated)
-                    for transcript in transcript_list:
-                        try:
-                            transcript_data = transcript.fetch()
-                            return ' '.join([item['text'] for item in transcript_data])
-                        except:
-                            continue
+                    # Try list_transcripts if available (newer API)
+                    try:
+                        if hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                            
+                            # Try to get English transcript first
+                            try:
+                                transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
+                                transcript_data = transcript.fetch()
+                                return ' '.join([item['text'] for item in transcript_data])
+                            except (NoTranscriptFound, TranscriptsDisabled):
+                                # If English fails, try auto-generated English
+                                try:
+                                    transcript = transcript_list.find_generated_transcript(['en'])
+                                    transcript_data = transcript.fetch()
+                                    return ' '.join([item['text'] for item in transcript_data])
+                                except (NoTranscriptFound, TranscriptsDisabled):
+                                    # Get the first available transcript (manual or auto-generated)
+                                    for transcript in transcript_list:
+                                        try:
+                                            transcript_data = transcript.fetch()
+                                            return ' '.join([item['text'] for item in transcript_data])
+                                        except:
+                                            continue
+                    except AttributeError:
+                        # list_transcripts not available in this version
+                        pass
         except VideoUnavailable:
             error_messages.append("Video is unavailable or does not exist")
         except TranscriptsDisabled:
