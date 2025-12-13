@@ -1,4 +1,4 @@
-# 🎥 YouTube Transcript Scraper with AI
+# 🎥 YouTube Transcript Scraper with AI https://ai-youtube-scraper.streamlit.app
 
 A powerful Streamlit application that extracts transcripts from YouTube videos and provides AI-powered features like summarization and chat, powered by OpenRouter.ai.
 
@@ -268,4 +268,5 @@ For questions or support, please open an issue on GitHub.
 **Made with ❤️ using Streamlit and OpenRouter.ai**
 
 If you find this project useful, please give it a ⭐ on GitHub!
+
 
