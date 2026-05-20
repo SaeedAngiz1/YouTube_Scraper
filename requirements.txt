@@ -3,3 +3,4 @@ youtube-transcript-api>=0.6.0
 requests>=2.31.0
 google-api-python-client>=2.100.0
 
+defusedxml>=0.7.1
