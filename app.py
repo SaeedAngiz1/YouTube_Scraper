@@ -3,6 +3,7 @@ import re
 import requests
 from typing import List, Dict, Optional
 import os
+import xml.etree.ElementTree as ET
 
 # YouTube Data API imports
 try:
@@ -176,7 +177,6 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
 
         if response.status_code == 200 and response.text.strip():
             # Parse XML transcript
-            import xml.etree.ElementTree as ET
             try:
                 root = ET.fromstring(response.text)
                 texts = []
@@ -231,7 +231,6 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                             caption_response = requests.get(caption_url, headers=headers, timeout=15)
                             if caption_response.status_code == 200 and caption_response.text.strip():
                                 # Try XML parsing
-                                import xml.etree.ElementTree as ET
                                 try:
                                     root = ET.fromstring(caption_response.text)
                                     texts = []
