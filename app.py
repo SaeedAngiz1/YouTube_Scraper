@@ -3,6 +3,7 @@ import re
 import requests
 from typing import List, Dict, Optional
 import os
+import json
 
 # YouTube Data API imports
 try:
@@ -216,7 +217,6 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                 caption_match = re.search(pattern, response.text, re.DOTALL)
                 if caption_match:
                     try:
-                        import json
                         captions = json.loads(caption_match.group(1))
                         break
                     except json.JSONDecodeError:
@@ -244,7 +244,6 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                                     # If XML parsing fails, try to extract text from response
                                     # Sometimes YouTube returns JSON instead of XML
                                     try:
-                                        import json
                                         json_data = json.loads(caption_response.text)
                                         # Extract text from JSON structure if available
                                         if isinstance(json_data, dict):
