@@ -101,12 +101,8 @@ def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> 
     return None
 
 
-@st.cache_data
-def fetch_transcript_direct(video_id: str) -> Optional[str]:
-    """Fetch transcript directly from YouTube using multiple methods."""
-    error_messages = []
-
-    # Method 1: Try youtube-transcript-api package (most reliable)
+def _fetch_via_youtube_transcript_api(video_id: str, error_messages: list) -> Optional[str]:
+    """Method 1: Try youtube-transcript-api package (most reliable)"""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
@@ -160,11 +156,16 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
 
     except ImportError:
         st.error("⚠️ youtube-transcript-api package not installed. Please run: pip install youtube-transcript-api")
-        return None
+        # In the original code, this returned None to immediately halt the entire fetch process.
+        # However, to be more robust, we append the error and allow fallback methods to run.
+        error_messages.append("youtube-transcript-api package not installed")
     except Exception as e:
         error_messages.append(f"Package error: {str(e)}")
 
-    # Method 2: Alternative API endpoint
+    return None
+
+def _fetch_via_alternative_api(video_id: str, error_messages: list) -> Optional[str]:
+    """Method 2: Alternative API endpoint"""
     try:
         # Try using YouTube's internal API
         api_url = f"https://www.youtube.com/api/timedtext?lang=en&v={video_id}"
@@ -191,7 +192,10 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
     except Exception as e:
         error_messages.append(f"Alternative API method failed: {str(e)}")
 
-    # Method 3: Direct scraping fallback (improved)
+    return None
+
+def _fetch_via_direct_scraping(video_id: str, error_messages: list) -> Optional[str]:
+    """Method 3: Direct scraping fallback (improved)"""
     try:
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         headers = {
@@ -263,6 +267,29 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                             continue
     except Exception as e:
         error_messages.append(f"Scraping method failed: {str(e)}")
+
+    return None
+
+
+@st.cache_data
+def fetch_transcript_direct(video_id: str) -> Optional[str]:
+    """Fetch transcript directly from YouTube using multiple methods."""
+    error_messages = []
+
+    # Method 1: Try youtube-transcript-api package (most reliable)
+    transcript = _fetch_via_youtube_transcript_api(video_id, error_messages)
+    if transcript:
+        return transcript
+
+    # Method 2: Alternative API endpoint
+    transcript = _fetch_via_alternative_api(video_id, error_messages)
+    if transcript:
+        return transcript
+
+    # Method 3: Direct scraping fallback (improved)
+    transcript = _fetch_via_direct_scraping(video_id, error_messages)
+    if transcript:
+        return transcript
 
     # If all methods failed, show helpful error message
     if error_messages:
