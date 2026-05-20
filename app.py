@@ -54,7 +54,7 @@ def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> 
     if not api_key:
         try:
             api_key = st.secrets.get('YOUTUBE_API_KEY', None)
-        except:
+        except Exception:
             pass
         if not api_key:
             api_key = os.getenv('YOUTUBE_API_KEY')
@@ -144,7 +144,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                                         try:
                                             transcript_data = transcript.fetch()
                                             return ' '.join([item['text'] for item in transcript_data])
-                                        except:
+                                        except Exception:
                                             continue
                     except AttributeError:
                         # list_transcripts not available in this version
@@ -257,7 +257,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                                                             texts.append(seg['utf8'])
                                             if texts:
                                                 return ' '.join(texts)
-                                    except:
+                                    except Exception:
                                         pass
                         except Exception as e:
                             continue
@@ -567,7 +567,7 @@ if st.session_state.get('video_info'):
             try:
                 pub_date = datetime.fromisoformat(video_info['published_at'].replace('Z', '+00:00'))
                 st.write(f"**Published:** {pub_date.strftime('%B %d, %Y')}")
-            except:
+            except Exception:
                 st.write(f"**Published:** {video_info['published_at']}")
         if video_info.get('description'):
             with st.expander("📝 Video Description"):
