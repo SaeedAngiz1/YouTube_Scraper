@@ -12,6 +12,14 @@ try:
 except ImportError:
     YOUTUBE_API_AVAILABLE = False
 
+# YouTube Transcript API imports
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+    YOUTUBE_TRANSCRIPT_API_AVAILABLE = True
+except ImportError:
+    YOUTUBE_TRANSCRIPT_API_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(
     page_title="YouTube Transcript Scraper with AI",
@@ -107,10 +115,10 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
     error_messages = []
 
     # Method 1: Try youtube-transcript-api package (most reliable)
-    try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-        from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
-
+    if not YOUTUBE_TRANSCRIPT_API_AVAILABLE:
+        st.error("⚠️ youtube-transcript-api package not installed. Please run: pip install youtube-transcript-api")
+        return None
+    else:
         try:
             # Try simple get_transcript first (works for most cases)
             try:
@@ -157,12 +165,6 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
             error_messages.append("No transcripts found for this video")
         except Exception as e:
             error_messages.append(f"youtube-transcript-api error: {str(e)}")
-
-    except ImportError:
-        st.error("⚠️ youtube-transcript-api package not installed. Please run: pip install youtube-transcript-api")
-        return None
-    except Exception as e:
-        error_messages.append(f"Package error: {str(e)}")
 
     # Method 2: Alternative API endpoint
     try:
