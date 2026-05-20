@@ -567,7 +567,7 @@ if st.session_state.get('video_info'):
             try:
                 pub_date = datetime.fromisoformat(video_info['published_at'].replace('Z', '+00:00'))
                 st.write(f"**Published:** {pub_date.strftime('%B %d, %Y')}")
-            except:
+            except (ValueError, TypeError, AttributeError):
                 st.write(f"**Published:** {video_info['published_at']}")
         if video_info.get('description'):
             with st.expander("📝 Video Description"):
