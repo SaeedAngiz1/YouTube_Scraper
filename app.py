@@ -29,25 +29,27 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
 
+# Pre-compile regex patterns for better performance
+YOUTUBE_URL_PATTERNS = [
+    re.compile(r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)'),
+    re.compile(r'youtube\.com\/watch\?.*v=([^&\n?#]+)')
+]
+
 def extract_video_id(url: str) -> Optional[str]:
     """Extract video ID from various YouTube URL formats."""
-    patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
-        r'youtube\.com\/watch\?.*v=([^&\n?#]+)'
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, url)
+    for pattern in YOUTUBE_URL_PATTERNS:
+        match = pattern.search(url)
         if match:
             return match.group(1)
     return None
 
 
+@st.cache_data(ttl=3600)
 def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> Optional[Dict]:
     """Get video information using YouTube Data API v3."""
     if not YOUTUBE_API_AVAILABLE:
         return None
-    
+
     # Get API key from secrets, environment, or session state
     if not api_key:
         try:
@@ -56,27 +58,27 @@ def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> 
             pass
         if not api_key:
             api_key = os.getenv('YOUTUBE_API_KEY')
-    
+
     if not api_key:
         return None
-    
+
     try:
         # Build YouTube API service
         youtube = build('youtube', 'v3', developerKey=api_key)
-        
+
         # Get video details
         request = youtube.videos().list(
             part='snippet,statistics,contentDetails',
             id=video_id
         )
         response = request.execute()
-        
+
         if response.get('items'):
             item = response['items'][0]
             snippet = item.get('snippet', {})
             statistics = item.get('statistics', {})
             content_details = item.get('contentDetails', {})
-            
+
             return {
                 'title': snippet.get('title', ''),
                 'description': snippet.get('description', ''),
@@ -95,19 +97,20 @@ def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> 
         st.warning(f"YouTube Data API error: {e}")
     except Exception as e:
         st.warning(f"Error fetching video info: {str(e)}")
-    
+
     return None
 
 
+@st.cache_data
 def fetch_transcript_direct(video_id: str) -> Optional[str]:
     """Fetch transcript directly from YouTube using multiple methods."""
     error_messages = []
-    
+
     # Method 1: Try youtube-transcript-api package (most reliable)
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
-        
+
         try:
             # Try simple get_transcript first (works for most cases)
             try:
@@ -123,7 +126,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                     try:
                         if hasattr(YouTubeTranscriptApi, 'list_transcripts'):
                             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                            
+
                             # Try to get English transcript first
                             try:
                                 transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
@@ -154,13 +157,13 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
             error_messages.append("No transcripts found for this video")
         except Exception as e:
             error_messages.append(f"youtube-transcript-api error: {str(e)}")
-            
+
     except ImportError:
         st.error("⚠️ youtube-transcript-api package not installed. Please run: pip install youtube-transcript-api")
         return None
     except Exception as e:
         error_messages.append(f"Package error: {str(e)}")
-    
+
     # Method 2: Alternative API endpoint
     try:
         # Try using YouTube's internal API
@@ -170,7 +173,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
             'Accept': 'application/xml, text/xml, */*'
         }
         response = requests.get(api_url, headers=headers, timeout=15)
-        
+
         if response.status_code == 200 and response.text.strip():
             # Parse XML transcript
             import xml.etree.ElementTree as ET
@@ -187,7 +190,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                 pass
     except Exception as e:
         error_messages.append(f"Alternative API method failed: {str(e)}")
-    
+
     # Method 3: Direct scraping fallback (improved)
     try:
         video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -197,7 +200,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
             'Accept-Language': 'en-US,en;q=0.5'
         }
         response = requests.get(video_url, headers=headers, timeout=15)
-        
+
         if response.status_code != 200:
             error_messages.append(f"Failed to fetch video page (status: {response.status_code})")
         else:
@@ -207,7 +210,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                 r'"captions":\s*\{[^}]*"captionTracks":\s*(\[.*?\])',
                 r'captionTracks["\']?\s*:\s*(\[.*?\])',
             ]
-            
+
             captions = None
             for pattern in patterns:
                 caption_match = re.search(pattern, response.text, re.DOTALL)
@@ -218,7 +221,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                         break
                     except json.JSONDecodeError:
                         continue
-            
+
             if captions and len(captions) > 0:
                 # Try each caption track
                 for caption in captions:
@@ -260,13 +263,13 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                             continue
     except Exception as e:
         error_messages.append(f"Scraping method failed: {str(e)}")
-    
+
     # If all methods failed, show helpful error message
     if error_messages:
         st.warning("⚠️ All transcript fetching methods failed. This video may not have captions enabled.")
         with st.expander("🔍 Show technical details"):
             st.code('\n'.join(error_messages))
-    
+
     return None
 
 
@@ -276,24 +279,24 @@ def call_openrouter_api(prompt: str, model: str = "openai/gpt-4o-mini") -> Optio
     # 1. Session state (user entered in sidebar)
     # 2. Streamlit secrets (for production)
     # 3. Environment variable (for local development)
-    
+
     secrets_key = None
     try:
         secrets_key = st.secrets.get('OPENROUTER_API_KEY', None)
     except (FileNotFoundError, KeyError):
         # Secrets file doesn't exist or key not found - that's okay
         pass
-    
+
     api_key = (
-        st.session_state.get('openrouter_api_key') or 
+        st.session_state.get('openrouter_api_key') or
         secrets_key or
         os.getenv('OPENROUTER_API_KEY')
     )
-    
+
     if not api_key:
         st.error("OpenRouter API key not found. Please set it in the sidebar, in .streamlit/secrets.toml, or as OPENROUTER_API_KEY environment variable.")
         return None
-    
+
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -313,13 +316,13 @@ def call_openrouter_api(prompt: str, model: str = "openai/gpt-4o-mini") -> Optio
             },
             timeout=30
         )
-        
+
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
             st.error(f"OpenRouter API error: {response.status_code} - {response.text}")
             return None
-            
+
     except Exception as e:
         st.error(f"Error calling OpenRouter API: {str(e)}")
         return None
@@ -329,7 +332,7 @@ def generate_summary(transcript: str, model: str) -> str:
     """Generate AI summary of the transcript."""
     # Limit transcript to first 8000 chars to avoid token limits
     transcript_snippet = transcript[:8000]
-    
+
     prompt = f"""Please provide a comprehensive summary of the following YouTube video transcript. Include:
 1. Main topics and key points discussed
 2. Important details and insights
@@ -340,7 +343,7 @@ TRANSCRIPT:
 {transcript_snippet}
 
 SUMMARY:"""
-    
+
     return call_openrouter_api(prompt, model)
 
 
@@ -348,7 +351,7 @@ def chat_with_transcript(question: str, transcript: str, model: str, chat_histor
     """Chat with AI about the transcript."""
     # Build context from transcript (limit to 6000 chars)
     context = transcript[:6000]
-    
+
     # Build conversation history
     conversation_context = ""
     if chat_history:
@@ -357,7 +360,7 @@ def chat_with_transcript(question: str, transcript: str, model: str, chat_histor
         for msg in recent_history:
             role = "User" if msg["role"] == "user" else "Assistant"
             conversation_context += f"{role}: {msg['content']}\n"
-    
+
     prompt = f"""You are a helpful AI assistant that has access to a YouTube video transcript. Answer the user's question based on the following video transcript.
 
 VIDEO TRANSCRIPT:
@@ -375,14 +378,14 @@ INSTRUCTIONS:
 - Reference specific details from the transcript when relevant
 
 ANSWER:"""
-    
+
     return call_openrouter_api(prompt, model)
 
 
 # Sidebar
 with st.sidebar:
     st.title("⚙️ Settings")
-    
+
     # OpenRouter API Key
     # Check if API key exists in secrets or environment
     secrets_key = None
@@ -391,18 +394,18 @@ with st.sidebar:
     except (FileNotFoundError, KeyError):
         # Secrets file doesn't exist or key not found - that's okay
         pass
-    
+
     default_key = (
         st.session_state.get('openrouter_api_key', '') or
         secrets_key or
         os.getenv('OPENROUTER_API_KEY', '')
     )
-    
+
     if default_key and not st.session_state.get('openrouter_api_key'):
         # If key exists in secrets/env but not session state, set it
         st.session_state.openrouter_api_key = default_key
         st.info("✅ API key loaded from secrets/environment")
-    
+
     api_key = st.text_input(
         "OpenRouter API Key",
         type="password",
@@ -410,27 +413,27 @@ with st.sidebar:
         help="Get your API key from https://openrouter.ai/keys. You can also set it in .streamlit/secrets.toml for local use."
     )
     st.session_state.openrouter_api_key = api_key
-    
+
     # YouTube Data API Key (optional - for video metadata)
     st.divider()
     st.subheader("📺 YouTube Data API (Optional)")
     youtube_api_key_help = "Get your API key from https://console.cloud.google.com/apis/credentials. Optional - enables video metadata display."
-    
+
     youtube_secrets_key = None
     try:
         youtube_secrets_key = st.secrets.get('YOUTUBE_API_KEY', '')
     except (FileNotFoundError, KeyError):
         pass
-    
+
     youtube_default_key = (
         st.session_state.get('youtube_api_key', '') or
         youtube_secrets_key or
         os.getenv('YOUTUBE_API_KEY', '')
     )
-    
+
     if youtube_default_key and not st.session_state.get('youtube_api_key'):
         st.session_state.youtube_api_key = youtube_default_key
-    
+
     youtube_api_key = st.text_input(
         "YouTube Data API Key (Optional)",
         type="password",
@@ -438,12 +441,12 @@ with st.sidebar:
         help=youtube_api_key_help
     )
     st.session_state.youtube_api_key = youtube_api_key
-    
+
     if YOUTUBE_API_AVAILABLE:
         st.caption("✅ YouTube Data API library installed")
     else:
         st.warning("⚠️ Install: pip install google-api-python-client")
-    
+
     # Model selection
     st.subheader("🤖 AI Model")
     model = st.selectbox(
@@ -463,9 +466,9 @@ with st.sidebar:
         index=0,
         help="Select the AI model to use for summaries and chat"
     )
-    
+
     st.divider()
-    
+
     # Instructions
     st.subheader("📖 How to Use")
     st.markdown("""
@@ -475,9 +478,9 @@ with st.sidebar:
        - Generate summary
        - Chat about the video
     """)
-    
+
     st.divider()
-    
+
     # Clear button
     if st.button("🗑️ Clear All", type="secondary"):
         st.session_state.transcript = ""
@@ -513,7 +516,7 @@ if fetch_button:
         else:
             with st.spinner("Fetching video information and transcript... This may take a moment."):
                 st.session_state.video_id = video_id
-                
+
                 # Get video metadata using YouTube Data API (if available)
                 video_info = None
                 if YOUTUBE_API_AVAILABLE and st.session_state.get('youtube_api_key'):
@@ -523,10 +526,10 @@ if fetch_button:
                             st.session_state.video_info = video_info
                     except Exception as e:
                         st.warning(f"Could not fetch video metadata: {str(e)}")
-                
+
                 # Fetch transcript
                 transcript = fetch_transcript_direct(video_id)
-                
+
                 if transcript:
                     st.session_state.transcript = transcript
                     st.success(f"✅ Transcript fetched successfully! ({len(transcript)} characters)")
@@ -537,12 +540,12 @@ if fetch_button:
 if st.session_state.get('video_info'):
     st.divider()
     video_info = st.session_state.video_info
-    
+
     col1, col2 = st.columns([1, 2])
     with col1:
         if video_info.get('thumbnail'):
             st.image(video_info['thumbnail'], use_container_width=True)
-    
+
     with col2:
         st.subheader(video_info.get('title', 'Video Information'))
         if video_info.get('channel_title'):
@@ -576,7 +579,7 @@ has_content = st.session_state.transcript or st.session_state.get('video_info')
 
 if has_content:
     st.divider()
-    
+
     # Determine which tabs to show
     if st.session_state.transcript:
         # Tabs for different views when transcript is available
@@ -585,7 +588,7 @@ if has_content:
         # Only show chat and summary tabs if no transcript but we have video info
         tab1, tab2 = st.tabs(["💬 AI Chat", "📝 AI Summary"])
         tab3 = None  # No transcript tab
-    
+
     # Transcript tab (only if transcript exists)
     if st.session_state.transcript and tab1 is not None:
         with tab1:
@@ -603,19 +606,19 @@ if has_content:
                 file_name=f"transcript_{st.session_state.video_id}.txt",
                 mime="text/plain"
             )
-    
+
     # Summary tab
     summary_tab = tab2 if st.session_state.transcript else tab1
     with summary_tab:
         st.subheader("AI Summary")
-        
+
         # Use transcript if available, otherwise use video description
         content_for_summary = st.session_state.transcript
         if not content_for_summary and st.session_state.get('video_info'):
             content_for_summary = st.session_state['video_info'].get('description', '')
             if content_for_summary:
                 st.info("ℹ️ Generating summary from video description (transcript not available)")
-        
+
         if content_for_summary:
             if st.button("✨ Generate Summary", type="primary"):
                 if not api_key:
@@ -639,7 +642,7 @@ if has_content:
                     st.write(st.session_state.summary)
         else:
             st.warning("No content available for summary. Please fetch a transcript or video information.")
-    
+
     # Chat tab
     if st.session_state.transcript:
         chat_tab = tab3
@@ -647,7 +650,7 @@ if has_content:
         chat_tab = tab1  # Chat is first tab when no transcript
     with chat_tab:
         st.subheader("Chat with AI about the Video")
-        
+
         # Determine content source for chat
         chat_content = st.session_state.transcript
         if not chat_content and st.session_state.get('video_info'):
@@ -662,17 +665,17 @@ Likes: {video_info.get('like_count', '')}
 Published: {video_info.get('published_at', '')}
 """
             st.info("ℹ️ Chatting using video information (transcript not available)")
-        
+
         if chat_content:
             # Display chat history
             if st.session_state.chat_history:
                 for message in st.session_state.chat_history:
                     with st.chat_message(message["role"]):
                         st.write(message["content"])
-            
+
             # Chat input
             user_question = st.chat_input("Ask me anything about the video...")
-            
+
             if user_question:
                 if not api_key:
                     st.error("Please enter your OpenRouter API key in the sidebar first.")
@@ -682,10 +685,10 @@ Published: {video_info.get('published_at', '')}
                         "role": "user",
                         "content": user_question
                     })
-                    
+
                     with st.chat_message("user"):
                         st.write(user_question)
-                    
+
                     # Get AI response
                     with st.chat_message("assistant"):
                         with st.spinner("Thinking..."):
@@ -695,7 +698,7 @@ Published: {video_info.get('published_at', '')}
                                 model,
                                 st.session_state.chat_history
                             )
-                            
+
                             if response:
                                 st.write(response)
                                 st.session_state.chat_history.append({
@@ -704,7 +707,7 @@ Published: {video_info.get('published_at', '')}
                                 })
                             else:
                                 st.error("Failed to get AI response. Please check your API key and try again.")
-                    
+
                     st.rerun()
         else:
             st.warning("No content available for chat. Please fetch a transcript or video information.")
@@ -718,10 +721,9 @@ st.divider()
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-        <p>Powered by <a href='https://openrouter.ai' target='_blank'>OpenRouter.ai</a> | 
+        <p>Powered by <a href='https://openrouter.ai' target='_blank'>OpenRouter.ai</a> |
         Built with <a href='https://streamlit.io' target='_blank'>Streamlit</a></p>
     </div>
     """,
     unsafe_allow_html=True
 )
-
