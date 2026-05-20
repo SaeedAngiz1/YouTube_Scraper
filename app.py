@@ -181,8 +181,9 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                 root = ET.fromstring(response.text)
                 texts = []
                 for elem in root.iter():
-                    if elem.text and elem.text.strip():
-                        texts.append(elem.text.strip())
+                    if text := elem.text:
+                        if stripped := text.strip():
+                            texts.append(stripped)
                 if texts:
                     return ' '.join(texts)
             except ET.ParseError:
@@ -236,8 +237,9 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                                     root = ET.fromstring(caption_response.text)
                                     texts = []
                                     for elem in root.iter():
-                                        if elem.text and elem.text.strip():
-                                            texts.append(elem.text.strip())
+                                        if text := elem.text:
+                                            if stripped := text.strip():
+                                                texts.append(stripped)
                                     if texts:
                                         return ' '.join(texts)
                                 except ET.ParseError:
