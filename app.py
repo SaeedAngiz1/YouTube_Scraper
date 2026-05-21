@@ -371,10 +371,12 @@ def chat_with_transcript(question: str, transcript: str, model: str, chat_histor
     conversation_context = ""
     if chat_history:
         recent_history = chat_history[-5:]  # Last 5 messages
-        conversation_context = "\n\nRecent conversation:\n"
-        for msg in recent_history:
-            role = "User" if msg["role"] == "user" else "Assistant"
-            conversation_context += f"{role}: {msg['content']}\n"
+        parts = [
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: "
+            f"{msg['content']}"
+            for msg in recent_history
+        ]
+        conversation_context = "\n\nRecent conversation:\n" + "\n".join(parts) + "\n"
 
     prompt = f"""You are a helpful AI assistant that has access to a YouTube video transcript. Answer the user's question based on the following video transcript.
 
