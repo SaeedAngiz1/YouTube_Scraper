@@ -342,6 +342,7 @@ def call_openrouter_api(prompt: str, model: str = "openai/gpt-4o-mini") -> Optio
         return None
 
 
+@st.cache_data
 def generate_summary(transcript: str, model: str) -> str:
     """Generate AI summary of the transcript."""
     # Limit transcript to first 8000 chars to avoid token limits
