@@ -54,7 +54,7 @@ def get_video_info_youtube_api(video_id: str, api_key: Optional[str] = None) -> 
     if not api_key:
         try:
             api_key = st.secrets.get('YOUTUBE_API_KEY', None)
-        except:
+        except Exception:
             pass
         if not api_key:
             api_key = os.getenv('YOUTUBE_API_KEY')
@@ -144,7 +144,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                                         try:
                                             transcript_data = transcript.fetch()
                                             return ' '.join([item['text'] for item in transcript_data])
-                                        except:
+                                        except Exception:
                                             continue
                     except AttributeError:
                         # list_transcripts not available in this version
@@ -176,7 +176,7 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
 
         if response.status_code == 200 and response.text.strip():
             # Parse XML transcript
-            import xml.etree.ElementTree as ET
+            import defusedxml.ElementTree as ET
             try:
                 root = ET.fromstring(response.text)
                 texts = []
@@ -223,44 +223,58 @@ def fetch_transcript_direct(video_id: str) -> Optional[str]:
                         continue
 
             if captions and len(captions) > 0:
-                # Try each caption track
-                for caption in captions:
+                from concurrent.futures import ThreadPoolExecutor
+
+                def fetch_caption(caption):
                     caption_url = caption.get('baseUrl') or caption.get('url')
-                    if caption_url:
-                        try:
-                            caption_response = requests.get(caption_url, headers=headers, timeout=15)
-                            if caption_response.status_code == 200 and caption_response.text.strip():
-                                # Try XML parsing
-                                import xml.etree.ElementTree as ET
+                    if not caption_url:
+                        return None
+                    try:
+                        caption_response = requests.get(caption_url, headers=headers, timeout=15)
+                        if caption_response.status_code == 200 and caption_response.text.strip():
+                            # Try XML parsing
+                            import defusedxml.ElementTree as ET
+                            try:
+                                root = ET.fromstring(caption_response.text)
+                                texts = []
+                                for elem in root.iter():
+                                    if elem.text and elem.text.strip():
+                                        texts.append(elem.text.strip())
+                                if texts:
+                                    return ' '.join(texts)
+                            except ET.ParseError:
+                                # If XML parsing fails, try to extract text from response
+                                # Sometimes YouTube returns JSON instead of XML
                                 try:
-                                    root = ET.fromstring(caption_response.text)
-                                    texts = []
-                                    for elem in root.iter():
-                                        if elem.text and elem.text.strip():
-                                            texts.append(elem.text.strip())
-                                    if texts:
-                                        return ' '.join(texts)
-                                except ET.ParseError:
-                                    # If XML parsing fails, try to extract text from response
-                                    # Sometimes YouTube returns JSON instead of XML
-                                    try:
-                                        import json
-                                        json_data = json.loads(caption_response.text)
-                                        # Extract text from JSON structure if available
-                                        if isinstance(json_data, dict):
-                                            events = json_data.get('events', [])
-                                            texts = []
-                                            for event in events:
-                                                if 'segs' in event:
-                                                    for seg in event['segs']:
-                                                        if 'utf8' in seg:
-                                                            texts.append(seg['utf8'])
-                                            if texts:
-                                                return ' '.join(texts)
-                                    except:
-                                        pass
-                        except Exception as e:
-                            continue
+                                    import json
+                                    json_data = json.loads(caption_response.text)
+                                    # Extract text from JSON structure if available
+                                    if isinstance(json_data, dict):
+                                        events = json_data.get('events', [])
+                                        texts = []
+                                        for event in events:
+                                            if 'segs' in event:
+                                                for seg in event['segs']:
+                                                    if 'utf8' in seg:
+                                                        texts.append(seg['utf8'])
+                                        if texts:
+                                            return ' '.join(texts)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    return None
+
+                executor = ThreadPoolExecutor(max_workers=5)
+                futures = [
+                    executor.submit(fetch_caption, caption) for caption in captions
+                ]
+                for future in futures:
+                    result = future.result()
+                    if result:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        return result
+                executor.shutdown(wait=False, cancel_futures=True)
     except Exception as e:
         error_messages.append(f"Scraping method failed: {str(e)}")
 
@@ -567,7 +581,7 @@ if st.session_state.get('video_info'):
             try:
                 pub_date = datetime.fromisoformat(video_info['published_at'].replace('Z', '+00:00'))
                 st.write(f"**Published:** {pub_date.strftime('%B %d, %Y')}")
-            except:
+            except Exception:
                 st.write(f"**Published:** {video_info['published_at']}")
         if video_info.get('description'):
             with st.expander("📝 Video Description"):
