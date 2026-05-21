@@ -3,6 +3,7 @@ import re
 import requests
 from typing import List, Dict, Optional
 import os
+from datetime import datetime
 
 # YouTube Data API imports
 try:
@@ -607,7 +608,6 @@ if st.session_state.get('video_info'):
             except (ValueError, TypeError):
                 st.write(f"**Likes:** {video_info['like_count']}")
         if video_info.get('published_at'):
-            from datetime import datetime
             try:
                 pub_date = datetime.fromisoformat(video_info['published_at'].replace('Z', '+00:00'))
                 st.write(f"**Published:** {pub_date.strftime('%B %d, %Y')}")
